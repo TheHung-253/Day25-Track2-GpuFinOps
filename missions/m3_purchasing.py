@@ -15,6 +15,8 @@ def run(verbose: bool = True) -> dict:
     jobs = load_csv("workloads.csv")
     cat = catalog_by_type()
     on_demand_monthly = optimized_monthly = 0.0
+    total_carbon_us_east_1 = 0.0
+    total_carbon_europe_north1 = 0.0
     recs = []
     for j in jobs:
         gtype = j["gpu_type"]
@@ -40,6 +42,12 @@ def run(verbose: bool = True) -> dict:
         recs.append({"job_id": j["job_id"], "gpu_type": gtype, "tier": tier,
                      "on_demand": round(on_demand_cost), "optimized": round(opt_cost)})
 
+        if interruptible:
+            wh = gpu_hours * num(c["watts"])
+            from finops.sustainability import carbon_g
+            total_carbon_us_east_1 += carbon_g(wh, "us-east-1")
+            total_carbon_europe_north1 += carbon_g(wh, "europe-north1")
+
     savings = on_demand_monthly - optimized_monthly
     savings_pct = savings / on_demand_monthly * 100 if on_demand_monthly else 0.0
 
@@ -50,6 +58,13 @@ def run(verbose: bool = True) -> dict:
         for r in recs:
             print(f"{r['job_id']:18}{r['gpu_type']:7}{r['tier']:11}${r['on_demand']:>11,}${r['optimized']:>11,}")
         print(f"\nmonthly: on-demand ${on_demand_monthly:,.0f} -> optimized ${optimized_monthly:,.0f}  ({savings_pct:.1f}% saved)")
+
+        print("\n[Extension 5] Carbon-aware Scheduling:")
+        print(f"  Carbon nếu chạy job gián đoạn ở us-east-1: {total_carbon_us_east_1:,.0f} gCO2e")
+        print(f"  Carbon nếu chuyển sang europe-north1: {total_carbon_europe_north1:,.0f} gCO2e")
+        carbon_savings = total_carbon_us_east_1 - total_carbon_europe_north1
+        carbon_savings_pct = (carbon_savings / total_carbon_us_east_1 * 100) if total_carbon_us_east_1 else 0
+        print(f"  Tiết kiệm: {carbon_savings:,.0f} gCO2e ({carbon_savings_pct:.1f}%)")
 
     return {"recommendations": recs, "on_demand_monthly": round(on_demand_monthly),
             "optimized_monthly": round(optimized_monthly), "savings_pct": round(savings_pct, 1)}
